@@ -71,6 +71,7 @@ jobs:
           echo "Calling: GET /hello"
           response=$(curl -s "http://127.0.0.1:3000/hello")
           echo "Response: $response"
+          echo "### GET /hello\n$response" >> $GITHUB_STEP_SUMMARY
           if [[ "$response" != *"Hello from Lambda!"* ]]; then
             echo "❌ Expected 'Hello from Lambda!' in response"
             exit 1
@@ -82,22 +83,10 @@ jobs:
           echo "Calling: GET /hello?name=Raj"
           response=$(curl -s "http://127.0.0.1:3000/hello?name=Raj")
           echo "Response: $response"
+          echo -e "\n### GET /hello?name=Raj\n$response" >> $GITHUB_STEP_SUMMARY
           if [[ "$response" != *"Hello, Raj!"* ]]; then
             echo "❌ Expected 'Hello, Raj!' in response"
             exit 1
           fi
 
-      - name: Upload SAM Local Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sam-local-logs
-          path: sam_local.log
-
-      - name: Stop SAM Local
-        if: always()
-        run: |
-          if [ -f sam_local_pid.txt ]; then
-            kill $(cat sam_local_pid.txt) || true
-          fi
-          echo "Stopped SAM Local."
+      
