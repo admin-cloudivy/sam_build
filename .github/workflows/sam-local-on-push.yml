@@ -12,17 +12,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python & SAM CLI
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install AWS SAM CLI
         run: |
-          sudo apt-get update
           pip install --user pipx
-          pipx install aws-sam-cli
+          python -m pipx ensurepath
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          pipx install aws-sam-cli
 
-      - name: Build app
-        run: sam build
+      - name: Build SAM app using container
+        run: |
+          export SAM_CLI_TELEMETRY=0
+          sam build --use-container
 
-      - name: Start API locally
+      - name: Start SAM API locally
         run: |
           nohup sam local start-api --port 3000 > sam.log 2>&1 &
           echo $! > pid.txt
@@ -34,12 +41,13 @@ jobs:
 
       - name: Test endpoints
         run: |
-          echo "Calling /hello:"
+          echo "GET /hello:"
           curl -s http://127.0.0.1:3000/hello
 
-          echo "Calling /hello?name=Raj:"
+          echo "GET /hello?name=Raj:"
           curl -s "http://127.0.0.1:3000/hello?name=Raj"
 
-      - name: Stop API
+      - name: Stop local API
         if: always()
-        run: kill $(cat pid.txt) || true
+        run: |
+          [ -f pid.txt ] && kill $(cat pid.txt) || true
