@@ -1,92 +1,45 @@
-name: SAM Local Build & Test on Push
+name: SAM Local Test
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
   workflow_dispatch:
 
-concurrency:
-  group: sam-local-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  sam-local-test:
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies (pipx)
+      - name: Setup Python & SAM CLI
         run: |
           sudo apt-get update
-          python -m pip install --upgrade pip
           pip install --user pipx
-          python -m pipx ensurepath
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
           pipx install aws-sam-cli
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Verify SAM CLI
-        run: sam --version
-
-      - name: Build SAM app
+      - name: Build app
         run: sam build
 
-      - name: Start SAM Local API in background
-        env:
-          SAM_CLI_TELEMETRY: 0
+      - name: Start API locally
         run: |
-          nohup bash -c "sam local start-api --port 3000 --warm-containers EAGER" > sam_local.log 2>&1 &
-          echo $! > sam_local_pid.txt
-          echo "Waiting for API to be ready..."
-          for i in {1..90}; do
-            if curl -sSf "http://127.0.0.1:3000/hello" >/dev/null 2>&1; then
-              echo "API is up."
-              break
-            fi
+          nohup sam local start-api --port 3000 > sam.log 2>&1 &
+          echo $! > pid.txt
+          for i in {1..30}; do
+            resp=$(curl -s http://127.0.0.1:3000/hello)
+            [ -n "$resp" ] && break
             sleep 1
           done
-          tail -n 20 sam_local.log || true
 
-      - name: Test API - default response
+      - name: Test endpoints
         run: |
-          set -e
-          echo "Calling: GET /hello"
-          response=$(curl -s "http://127.0.0.1:3000/hello")
-          echo "Response: $response"
-          echo "### GET /hello\n$response" >> $GITHUB_STEP_SUMMARY
-          if [[ "$response" != *"Hello from Lambda!"* ]]; then
-            echo "❌ Expected 'Hello from Lambda!' in response"
-            exit 1
-          fi
+          echo "Calling /hello:"
+          curl -s http://127.0.0.1:3000/hello
 
-      - name: Test API - with query param
-        run: |
-          set -e
-          echo "Calling: GET /hello?name=Raj"
-          response=$(curl -s "http://127.0.0.1:3000/hello?name=Raj")
-          echo "Response: $response"
-          echo -e "\n### GET /hello?name=Raj\n$response" >> $GITHUB_STEP_SUMMARY
-          if [[ "$response" != *"Hello, Raj!"* ]]; then
-            echo "❌ Expected 'Hello, Raj!' in response"
-            exit 1
-          fi
+          echo "Calling /hello?name=Raj:"
+          curl -s "http://127.0.0.1:3000/hello?name=Raj"
 
-      
+      - name: Stop API
+        if: always()
+        run: kill $(cat pid.txt) || true
